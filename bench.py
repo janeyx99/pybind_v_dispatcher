@@ -1,7 +1,7 @@
 """Cost of moving a PyTorch op from pybind11 to TORCH_LIBRARY.
 
-The same C++ symbol is exposed three ways, so the binding is the only variable.
-CPU tensors only. Timing is torch.utils.benchmark blocked_autorange.
+The pybind11 and TORCH_LIBRARY arms share a C++ symbol; the stable arm uses an
+equivalent implementation in stable-ABI types. Timing uses blocked_autorange.
 
     python setup.py build_ext --inplace && python bench.py [min_run_time_s]
 """
@@ -9,11 +9,15 @@ import sys, torch, torch.utils.benchmark as tb, pvd
 from torch.profiler import profile, ProfilerActivity
 
 MIN_RUN_TIME = float(sys.argv[1]) if len(sys.argv) > 1 else 2.0
+torch.set_num_threads(1)
 ARMS = [("A  pybind11",      pvd.my_op,           pvd.my_op_work),
         ("B  TORCH_LIBRARY", torch.ops.pvd.my_op, torch.ops.pvd.my_op_work)]
-if hasattr(torch.ops, "pvd_stable"):
-    ARMS += [("C  STABLE_TORCH_LIBRARY", torch.ops.pvd_stable.my_op,
-              torch.ops.pvd_stable.my_op_work)]
+try:
+    stable_arm = (torch.ops.pvd_stable.my_op, torch.ops.pvd_stable.my_op_work)
+except AttributeError:
+    pass
+else:
+    ARMS += [("C  STABLE_TORCH_LIBRARY", *stable_arm)]
 BASELINE = ARMS[0][0]
 
 
